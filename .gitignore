@@ -5,5 +5,7 @@ dist/
 *.log
 .sessions/
 *.tsbuildinfo
-build/
+# build/node is the bundled runtime copied in by scripts/prepare-node.mjs
+# (139MB); build/icon.* is committed.
+build/node/
 dist/

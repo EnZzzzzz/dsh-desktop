@@ -26,5 +26,7 @@ extraResources:
 mac:
   target: dmg
   category: public.app-category.developer-tools
+  icon: build/icon.icns
 dmg:
   title: dsh-desktop
+  icon: build/icon.icns
