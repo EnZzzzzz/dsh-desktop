@@ -1,24 +1,8 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { loadingPage, errorPage } from './pages'
 import { startWebServer, stopWebServer } from './server'
 
 let mainWindow: BrowserWindow | null = null
-
-const LOADING_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-desktop</title>
-<style>body{margin:0;height:100vh;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
-background:#1e1f24;color:#9a9ba5;font-family:-apple-system,'PingFang SC',sans-serif}
-.brand{color:#e4e4e9;font-size:18px;font-weight:600}</style></head>
-<body><div class="brand">dsh-desktop</div><div>正在启动 DeepSeek Harness 服务…</div></body></html>`)} `
-
-function errorPage(message: string): string {
-  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-desktop</title>
-<style>body{margin:0;height:100vh;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
-background:#1e1f24;color:#9a9ba5;font-family:-apple-system,'PingFang SC',sans-serif}
-.error{color:#e5534b;max-width:70%;white-space:pre-wrap}</style></head>
-<body><div class="error">服务启动失败：${message.replace(/</g, '&lt;')}</div>
-<div>请查看日志后重启应用。</div></body></html>`)} `
-}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -27,7 +11,7 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 560,
     title: 'dsh-desktop',
-    backgroundColor: '#1e1f24',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1f24' : '#f5f6f8',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -40,7 +24,7 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  void mainWindow.loadURL(LOADING_PAGE)
+  void mainWindow.loadURL(loadingPage())
   mainWindow.on('closed', () => {
     mainWindow = null
   })

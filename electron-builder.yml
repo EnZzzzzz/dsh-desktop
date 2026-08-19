@@ -31,6 +31,9 @@ extraResources:
       - '!**/node_gyp_bins/**'
   - from: build/node
     to: node
+  # Loading-page logo (see logoDataUrl in src/main/index.ts).
+  - from: build/icon.png
+    to: icon.png
 mac:
   target: dmg
   category: public.app-category.developer-tools
