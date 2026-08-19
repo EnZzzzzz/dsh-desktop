@@ -6,6 +6,8 @@ dist/
 .sessions/
 *.tsbuildinfo
 # build/node is the bundled runtime copied in by scripts/prepare-node.mjs
-# (139MB); build/icon.* is committed.
+# (139MB); build/runtime is the production-deps staging area from
+# scripts/prepare-runtime.mjs. Only build/icon.* is committed.
 build/node/
+build/runtime/
 dist/

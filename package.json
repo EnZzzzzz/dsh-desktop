@@ -13,8 +13,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "package": "node scripts/prepare-node.mjs && electron-vite build && electron-builder",
-    "package:dir": "node scripts/prepare-node.mjs && electron-vite build && electron-builder --dir"
+    "package": "node scripts/prepare-node.mjs && node scripts/prepare-runtime.mjs && electron-vite build && electron-builder",
+    "package:dir": "node scripts/prepare-node.mjs && node scripts/prepare-runtime.mjs && electron-vite build && electron-builder --dir"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.0-rc.7"

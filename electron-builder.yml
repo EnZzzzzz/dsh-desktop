@@ -9,11 +9,19 @@ directories:
 # node_modules is shipped VERBATIM via extraResources below, not through
 # electron-builder's dependency collector: the dsh plugin tree leans on
 # peerDependencies that npm auto-installs but the collector silently drops.
+# The source is build/runtime (production deps only, staged by
+# scripts/prepare-runtime.mjs) — NOT the project root's node_modules, which
+# contains ~600MB of devDependencies.
 files:
   - package.json
   - out/**
+  # The collector must NOT merge its own idea of production deps into the
+  # app: extraResources below already ships the full staged tree verbatim,
+  # and a collector pass on top only duplicates packages under nested
+  # node_modules (~48MB).
+  - '!node_modules/**'
 extraResources:
-  - from: node_modules
+  - from: build/runtime/node_modules
     to: app/node_modules
     filter:
       - '**/*'
