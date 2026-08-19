@@ -5,3 +5,5 @@ dist/
 *.log
 .sessions/
 *.tsbuildinfo
+build/
+dist/

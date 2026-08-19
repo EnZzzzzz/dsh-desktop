@@ -1,93 +1,72 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { IpcChannels, type Settings } from '../shared/ipc'
-import { loadSettings, saveSettings } from './settings'
-import { HarnessManager } from './harness'
-
-const here = dirname(fileURLToPath(import.meta.url))
+import { app, BrowserWindow, shell } from 'electron'
+import { startWebServer, stopWebServer } from './server'
 
 let mainWindow: BrowserWindow | null = null
-let settings = loadSettings()
 
-const manager = new HarnessManager(settings, {
-  onNotification: (n) => mainWindow?.webContents.send(IpcChannels.harnessNotification, n),
-  onState: (s) => mainWindow?.webContents.send(IpcChannels.harnessState, s),
-})
+const LOADING_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-desktop</title>
+<style>body{margin:0;height:100vh;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
+background:#1e1f24;color:#9a9ba5;font-family:-apple-system,'PingFang SC',sans-serif}
+.brand{color:#e4e4e9;font-size:18px;font-weight:600}</style></head>
+<body><div class="brand">dsh-desktop</div><div>正在启动 DeepSeek Harness 服务…</div></body></html>`)} `
+
+function errorPage(message: string): string {
+  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-desktop</title>
+<style>body{margin:0;height:100vh;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
+background:#1e1f24;color:#9a9ba5;font-family:-apple-system,'PingFang SC',sans-serif}
+.error{color:#e5534b;max-width:70%;white-space:pre-wrap}</style></head>
+<body><div class="error">服务启动失败：${message.replace(/</g, '&lt;')}</div>
+<div>请查看日志后重启应用。</div></body></html>`)} `
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 960,
-    height: 720,
-    minWidth: 640,
-    minHeight: 480,
+    width: 1280,
+    height: 840,
+    minWidth: 800,
+    minHeight: 560,
     title: 'dsh-desktop',
     backgroundColor: '#1e1f24',
     webPreferences: {
-      preload: join(here, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
     },
   })
 
+  // External links opened by the web UI go to the system browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    if (!url.startsWith('http://127.0.0.1')) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void mainWindow.loadFile(join(here, '../renderer/index.html'))
-  }
-
+  void mainWindow.loadURL(LOADING_PAGE)
   mainWindow.on('closed', () => {
     mainWindow = null
   })
-}
 
-function registerIpc(): void {
-  ipcMain.handle(IpcChannels.settingsGet, () => settings)
-
-  ipcMain.handle(IpcChannels.settingsSet, (_event, patch: Partial<Settings>) => {
-    settings = { ...settings, ...patch }
-    saveSettings(settings)
-    manager.updateSettings(settings)
-    return settings
-  })
-
-  ipcMain.handle(IpcChannels.pickWorkspace, async () => {
-    if (!mainWindow) return null
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择工作区目录',
-      properties: ['openDirectory', 'createDirectory'],
+  startWebServer()
+    .then((url) => mainWindow?.loadURL(url))
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      void mainWindow?.loadURL(errorPage(message))
     })
-    return result.canceled ? null : (result.filePaths[0] ?? null)
-  })
-
-  ipcMain.handle(IpcChannels.harnessSend, (_event, sessionId: string, text: string) =>
-    manager.send(sessionId, text),
-  )
-
-  ipcMain.handle(IpcChannels.harnessStop, () => manager.stop())
-
-  ipcMain.handle(IpcChannels.harnessGetState, () => manager.getState())
 }
 
-void app.whenReady().then(() => {
-  registerIpc()
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  void app.whenReady().then(createWindow)
 
-app.on('before-quit', () => {
-  void manager.dispose()
-})
+  // The web server is a child of this app: closing the window ends the session.
+  app.on('window-all-closed', () => app.quit())
+  app.on('before-quit', () => stopWebServer())
+}

@@ -1,0 +1,30 @@
+appId: ai.deepseek.harness.desktop
+productName: dsh-desktop
+# Keep every file real on disk: the packaged app spawns a Node child process
+# that must read the dsh CLI and its plugin packages by path — none of that
+# works from inside an asar archive.
+asar: false
+directories:
+  output: dist
+# node_modules is shipped VERBATIM via extraResources below, not through
+# electron-builder's dependency collector: the dsh plugin tree leans on
+# peerDependencies that npm auto-installs but the collector silently drops.
+files:
+  - package.json
+  - out/**
+extraResources:
+  - from: node_modules
+    to: app/node_modules
+    filter:
+      - '**/*'
+      - '!**/.bin'
+      # node-gyp's build-time python shim is an absolute symlink; the dumb copy
+      # collides with the collector's own pass (EEXIST). Useless at runtime.
+      - '!**/node_gyp_bins/**'
+  - from: build/node
+    to: node
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+dmg:
+  title: dsh-desktop

@@ -1,57 +1,54 @@
 # dsh-desktop
 
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的桌面客户端：Electron + React + TypeScript，通过官方 SDK [`@deepseek-ai/dsh-sdk-client`](https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-client) 以 stdio JSON-RPC 驱动一个本地的 harness 运行时子进程。
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）官方 Web UI 的桌面壳：Electron 主进程在本地拉起 `dsh web` 服务（随机空闲端口，仅监听 `127.0.0.1`），就绪后在窗口中加载该界面。**界面与功能 100% 来自官方 `@deepseek-ai/dsh` 包，本项目不做任何修改。**
 
 ## 架构
 
 ```
-渲染进程（React 聊天 UI）
-   │  IPC（window.dsh，contextBridge 隔离）
+Electron 窗口（BrowserWindow）
+   │  loadURL http://127.0.0.1:<随机端口>
 主进程（Electron / Node）
-   │  DeepSeekHarness（@deepseek-ai/dsh-sdk-client）
-   │  stdio JSON-RPC（initialize / session/prompt / shutdown + 事件通知）
-运行时子进程（dsh-jsonrpc-agent + runtime/cordis.yml）
-   │  DeepSeek API
-模型服务
+   │  spawn node <dsh CLI> web --port <随机端口>
+   │  轮询等待 HTTP 200，失败展示错误页；退出时 SIGTERM 回收
+dsh web 服务子进程（@deepseek-ai/dsh，官方 Web UI + agent 运行时）
 ```
 
-- **运行时组合**：`runtime/cordis.yml` 定义子进程的插件栈（SDK JSON-RPC server、DeepSeek 适配器、本地沙箱、persistent bash、str-replace 编辑器、JSONL 会话持久化），改编自上游 `examples/jsonrpc-agent/minimal.cordis.yml`。
-- **事件流**：运行时的 `session.event` / `session.status` 通知经主进程转发到渲染端，由 `src/renderer/src/events.ts` 折叠成聊天记录（流式文本增量、思考过程、工具调用/结果卡片、轮次边界）。
-- **设置**：API Key、模型、工作区目录、输出 token 上限保存在 `userData/settings.json`（本机明文，注意取舍），改动后运行时自动重启。
+- 会话、凭据、插件等数据全部走 dsh 自身的 `$DSH_HOME` 默认位置，与命令行 `npx @deepseek-ai/dsh web` 完全互通。
+- 服务日志写入应用数据目录 `logs/web-server.log`（界面提示服务启动失败时先看它）。
+- 单实例锁：重复启动只会聚焦已有窗口；关闭窗口即退出应用并回收服务进程。
 
-## 先决条件
+## 安装（DMG）
 
-- Node.js `^22.19.0 || >=24.0.0`（运行时使用；Electron 界面本身自带运行时）
-- pnpm 11
-- 一个 DeepSeek API Key（在应用「设置」中填写，或经环境变量 `DEEPSEEK_API_KEY` 传给子进程）
+1. 双击 `dist/dsh-desktop-<version>-arm64.dmg`，把 dsh-desktop 拖进「应用程序」。
+2. 首次启动如被 Gatekeeper 拦截（应用未签名）：在「应用程序」里**右键 → 打开**，或在 系统设置 → 隐私与安全性 中放行。
+3. 应用内已捆绑 Node.js 运行时与全部 dsh 依赖，**无需安装任何其他东西**。
 
-## 运行
+## 开发
+
+先决条件：Node.js `^22.19.0 || >=24.0.0`、npm 11。
 
 ```sh
-pnpm install
-pnpm dev        # 开发模式（HMR）
-pnpm build      # 三端编译到 out/
-pnpm start      # 以构建产物启动
-pnpm typecheck  # tsc 项目引用检查
-pnpm smoke      # 无界面冒烟：SDK 握手；有 DEEPSEEK_API_KEY 时加跑一轮真实对话
+npm install
+npm run dev          # 开发模式（主进程改动自动重启）
+npm run typecheck    # tsc 检查
+npm run package      # 产出 dist/ 下的 DMG（先跑 scripts/prepare-node.mjs 捆绑 Node）
+npm run package:dir  # 免压缩的 .app 目录，调试用
 ```
 
-首次发送消息时会惰性启动运行时子进程（需要几秒）。「新会话」按钮开启新的 SDK 会话；会话持久化在 `userData/sessions/`。
+## 打包要点（踩坑记录）
 
-## 已知限制（继承自上游 preview 协议）
+- `asar: false`：运行时子进程按真实文件路径读取 CLI 与插件包，asar 归档内无法读取。
+- **用 npm 而不是 pnpm**：electron-builder 的依赖收集器面对 pnpm 布局（符号链接 / `.pnpm` 隐藏目录 / hoisted 冲突嵌套）会静默丢包。
+- **node_modules 经 `extraResources` 原样拷贝，不走收集器**：dsh 插件树大量依赖 peerDependencies，npm 会自动安装 peers 但收集器不携带间接 peer（如 `cordis-plugin-group`、`dsh-bash-sandbox`），逐个补声明是打地鼠，直接整树拷贝最可靠。
+- electron-builder 固定 25.1.8：26.x 的 `app-builder-lib` 声明依赖 `@electron/get@^3` 却使用了 v4+ 才加入的 `ElectronDownloadCacheMode`，打包即崩（上游版本声明 bug）。
+- `scripts/prepare-node.mjs` 把构建机的 Node 可执行文件复制到 `build/node/bin/node`，经 `extraResources` 打进 `Resources/node/`，子进程优先使用它（找不到才回退系统 Node / Electron run-as-node）。
+- `@deepseek-ai/*` 固定 `0.1.0-rc.7` 并指向官方 registry（`.npmrc`）：npmmirror 的 latest 标签滞后。
+- npm 11 默认拦截依赖安装脚本：已在本包 `allowScripts` 中放行 electron/esbuild/koffi/node-pty/dsh-subprocess-local。若 `node_modules/electron/dist` 不完整（本机出现过 install.js 缓存命中后不解压的静默失败），手动执行：
+  `cd node_modules/electron && unzip -oq ~/Library/Caches/electron/*/electron-v<version>-darwin-arm64.zip -d dist && echo -n "v<version>" > dist/version && echo -n "Electron.app/Contents/MacOS/Electron" > path.txt`
 
-- **无逐轮取消**：SDK 协议没有 prompt 取消方法。「停止」按钮的语义是回收并重启运行时子进程，进行中的轮次输出仍会留在事件流中。
-- **无历史会话列表**：协议没有会话枚举/恢复接口；会话 JSONL 在运行时侧持久化，但 UI 只能看到本次启动后的活动会话。
-- **上游处于 developer preview**：`@deepseek-ai/*` 各包固定为 `0.1.0-rc.7`（存在兼容性断裂声明，升级需整族一起升）。注意默认 npmmirror 镜像的 latest 标签滞后，本项目 `.npmrc` 已将 `@deepseek-ai` scope 指向官方 registry。
-- **未打包分发**：本期只做开发态运行；electron-builder 打包与运行时内嵌（捆绑 node、node_modules 外置）留作后续。
+## 已知限制
 
-## 目录
-
-```
-runtime/cordis.yml   运行时插件组合（stdio JSON-RPC agent）
-scripts/smoke.mjs    SDK 路径冒烟脚本
-src/main/            Electron 主进程：HarnessManager（SDK 生命周期）、设置、IPC
-src/preload/         contextBridge → window.dsh
-src/shared/          IPC 通道与载荷类型（三端共享）
-src/renderer/        React 聊天界面
-```
+- 未签名、未公证：DMG 仅供本机/信任环境安装。
+- 上游 dsh 处于 developer preview，存在兼容性断裂声明；升级时整族版本一起升。
+- 未构建 x64 / Windows / Linux 包（配置可加，未验证）。
+- 应用图标沿用 Electron 默认图标。
