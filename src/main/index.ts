@@ -1,8 +1,14 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadingPage, errorPage } from './pages'
 import { startWebServer, stopWebServer } from './server'
+import { startBrowserEndpoint } from './browser'
 
 let mainWindow: BrowserWindow | null = null
+let closeBrowserEndpoint: (() => void) | null = null
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -15,6 +21,15 @@ function createWindow(): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      // Built-in browser: the dsh-builtin-browser plugin renders a real
+      // Chromium <webview> in the harness page; webviewTag must be enabled
+      // and the preload injects window.desktopBridge (shell marker + port).
+      webviewTag: true,
+      preload: join(__dirname, '../preload/index.mjs'),
+      // sandbox: false so the preload can read process.env (the browser
+      // control port); the page itself still has no Node access
+      // (contextIsolation + no nodeIntegration).
+      sandbox: false,
     },
   })
 
@@ -48,9 +63,22 @@ if (!gotLock) {
     }
   })
 
-  void app.whenReady().then(createWindow)
+  void app.whenReady().then(async () => {
+    // Start the builtin-browser control endpoint before the window (and the
+    // `dsh web` child) so DSH_DESKTOP_BROWSER_PORT is exported in time.
+    try {
+      const endpoint = await startBrowserEndpoint(() => mainWindow)
+      closeBrowserEndpoint = endpoint.close
+    } catch (error) {
+      console.error('[builtin-browser] control endpoint failed:', error)
+    }
+    createWindow()
+  })
 
   // The web server is a child of this app: closing the window ends the session.
   app.on('window-all-closed', () => app.quit())
-  app.on('before-quit', () => stopWebServer())
+  app.on('before-quit', () => {
+    closeBrowserEndpoint?.()
+    stopWebServer()
+  })
 }

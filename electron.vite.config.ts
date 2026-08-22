@@ -8,4 +8,11 @@ export default defineConfig({
       rollupOptions: { input: 'src/main/index.ts' },
     },
   },
+  preload: {
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      outDir: 'out/preload',
+      rollupOptions: { input: 'src/preload/index.ts' },
+    },
+  },
 })
