@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { loadingPage, errorPage } from './pages'
 import { startWebServer, stopWebServer } from './server'
 import { startBrowserEndpoint } from './browser'
+import { installAppMenu } from './menu'
 
 let mainWindow: BrowserWindow | null = null
 let closeBrowserEndpoint: (() => void) | null = null
@@ -64,6 +65,7 @@ if (!gotLock) {
   })
 
   void app.whenReady().then(async () => {
+    installAppMenu()
     // Start the builtin-browser control endpoint before the window (and the
     // `dsh web` child) so DSH_DESKTOP_BROWSER_PORT is exported in time.
     try {
