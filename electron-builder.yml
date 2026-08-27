@@ -4,6 +4,12 @@ productName: dsh-desktop
 # that must read the dsh CLI and its plugin packages by path — none of that
 # works from inside an asar archive.
 asar: false
+# The app ships its dependencies from build/runtime (staged by
+# scripts/prepare-runtime.mjs) via extraResources below — the project root's
+# node_modules is NOT packaged. Rebuilding root native deps against the
+# Electron ABI is therefore wasted work (the dsh runtime runs in the bundled
+# Node binary, not in Electron), and @electron/rebuild hangs on this machine.
+npmRebuild: false
 directories:
   output: dist
 # node_modules is shipped VERBATIM via extraResources below, not through
@@ -34,6 +40,16 @@ extraResources:
   # Loading-page logo (see logoDataUrl in src/main/index.ts).
   - from: build/icon.png
     to: icon.png
+linux:
+  target: deb
+  category: Development
+  icon: build/icon.png
+  maintainer: DeepSeek <support@deepseek.com>
+deb:
+  # Default postinst only chmods 4755 chrome-sandbox when user namespaces are
+  # missing, which breaks on Ubuntu 23.10+ AppArmor userns restrictions; our
+  # script always sets the SUID bit (see scripts/after-install.sh).
+  afterInstall: scripts/after-install.sh
 mac:
   target: dmg
   category: public.app-category.developer-tools

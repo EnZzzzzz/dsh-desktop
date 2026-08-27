@@ -19,6 +19,9 @@
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.1-rc.2"
   },
+  "overrides": {
+    "node-gyp": "^10.0.0"
+  },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "electron": "^38.0.0",
