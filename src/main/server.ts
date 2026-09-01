@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { execFileSync } from 'node:child_process'
 import { createWriteStream, mkdirSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { createServer } from 'node:net'
 import { join, dirname } from 'node:path'
 
 const require = createRequire(import.meta.url)
@@ -39,6 +40,57 @@ function resolveDshBin(): string {
   return join(dirname(pkg), 'lib', 'bin.js')
 }
 
+function canListen(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = createServer()
+    probe.once('error', () => resolve(false))
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)))
+  })
+}
+
+function listenerPids(port: number): number[] {
+  const lsof = ['/usr/sbin/lsof', '/usr/bin/lsof'].find(existsSync)
+  if (!lsof) throw new Error(`端口 ${port} 已被占用，但系统中找不到 lsof，无法定位占用进程`)
+
+  try {
+    const output = execFileSync(lsof, ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], {
+      encoding: 'utf8',
+    })
+    return [...new Set(output.trim().split(/\s+/).map(Number))].filter(
+      (pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid,
+    )
+  } catch (error) {
+    const status = (error as { status?: number }).status
+    if (status === 1) return []
+    throw error
+  }
+}
+
+async function releasePort(port: number): Promise<void> {
+  if (await canListen(port)) return
+
+  const terminate = (signal: NodeJS.Signals): void => {
+    for (const pid of listenerPids(port)) {
+      try {
+        process.kill(pid, signal)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      }
+    }
+  }
+
+  terminate('SIGTERM')
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    if (await canListen(port)) return
+  }
+
+  terminate('SIGKILL')
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  if (!(await canListen(port))) throw new Error(`无法释放端口 ${port}`)
+}
+
 let child: ChildProcess | null = null
 
 /**
@@ -48,6 +100,7 @@ let child: ChildProcess | null = null
  */
 export async function startWebServer(): Promise<string> {
   const port = WEB_PORT
+  await releasePort(port)
   const bin = resolveDshBin()
   if (!existsSync(bin)) throw new Error(`dsh CLI 入口缺失：${bin}`)
 
