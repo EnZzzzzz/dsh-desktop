@@ -3,10 +3,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { execFileSync } from 'node:child_process'
 import { createWriteStream, mkdirSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { createServer } from 'node:net'
 import { join, dirname } from 'node:path'
 
 const require = createRequire(import.meta.url)
+const WEB_PORT = 49982
 
 /**
  * Resolve a Node.js executable for the web-server subprocess. Packaged builds
@@ -39,26 +39,15 @@ function resolveDshBin(): string {
   return join(dirname(pkg), 'lib', 'bin.js')
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      server.close(() => (port ? resolve(port) : reject(new Error('no free port'))))
-    })
-  })
-}
-
 let child: ChildProcess | null = null
 
 /**
- * Spawn `dsh web --port <free>` and wait until the UI answers HTTP 200.
+ * Spawn `dsh web` on the desktop shell's fixed port and wait until the UI
+ * answers HTTP 200.
  * Resolves with the origin to load. Server logs go to userData/logs.
  */
 export async function startWebServer(): Promise<string> {
-  const port = await freePort()
+  const port = WEB_PORT
   const bin = resolveDshBin()
   if (!existsSync(bin)) throw new Error(`dsh CLI 入口缺失：${bin}`)
 

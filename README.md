@@ -1,14 +1,14 @@
 # dsh-desktop
 
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）官方 Web UI 的桌面壳：Electron 主进程在本地拉起 `dsh web` 服务（随机空闲端口，仅监听 `127.0.0.1`），就绪后在窗口中加载该界面。**界面与功能 100% 来自官方 `@deepseek-ai/dsh` 包，本项目不做任何修改。**
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）官方 Web UI 的桌面壳：Electron 主进程在本地拉起 `dsh web` 服务（固定端口 `49982`，仅监听 `127.0.0.1`），就绪后在窗口中加载该界面。**界面与功能 100% 来自官方 `@deepseek-ai/dsh` 包，本项目不做任何修改。**
 
 ## 架构
 
 ```
 Electron 窗口（BrowserWindow）
-   │  loadURL http://127.0.0.1:<随机端口>
+   │  loadURL http://127.0.0.1:49982
 主进程（Electron / Node）
-   │  spawn node <dsh CLI> web --port <随机端口>
+   │  spawn node <dsh CLI> web --port 49982
    │  轮询等待 HTTP 200，失败展示错误页；退出时 SIGTERM 回收
 dsh web 服务子进程（@deepseek-ai/dsh，官方 Web UI + agent 运行时）
 ```
