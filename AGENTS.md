@@ -14,6 +14,18 @@ npm run package:dir  # 免压缩的 .app 目录，调试用
 
 先决条件：Node.js `^22.19.0 || >=24.0.0`、npm 11。
 
+## 查内核版本
+
+"内核"指 `@deepseek-ai/dsh` 包。当前版本看 `package.json` 的 `dependencies`（`build/runtime/package.json` 由 prepare 脚本同步生成）。
+
+```sh
+npm view @deepseek-ai/dsh dist-tags   # latest / next / alpha 各通道指向的版本
+npm view @deepseek-ai/dsh versions    # 全部已发布版本
+npm view @deepseek-ai/dsh time        # 各版本发布时间，判断新旧
+```
+
+稳定通道看 `latest` 标签；预发布版（如 `*-alpha.*`）挂在 `alpha` 标签下，升级前需确认稳定性。
+
 ## 开发准则
 
 - 本项目只做壳：界面与功能 100% 来自官方 `@deepseek-ai/dsh` 包，不 fork、不修改上游 UI；自定义行为只落在 `src/main` / `src/preload`。
