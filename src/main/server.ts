@@ -114,16 +114,42 @@ export async function startWebServer(): Promise<string> {
     env: { ...process.env, ...envPrefix },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  child.stdout?.pipe(log)
   child.stderr?.pipe(log)
 
-  const url = `http://127.0.0.1:${port}`
-  const exited = new Promise<never>((_, reject) => {
-    child!.once('exit', (code, signal) => {
-      reject(new Error(`dsh web 进程提前退出（code=${code} signal=${signal}），日志见 ${logDir}/web-server.log`))
+  const baseUrl = `http://127.0.0.1:${port}`
+  // Since 0.1.5 the web UI is token-gated: the CLI prints the full URL
+  // (`dsh web: http://…/?token=…`) on stdout and plain requests get 401.
+  // Resolve with that URL; loading it exchanges the token for a session
+  // cookie in the Electron session.
+  const url = await new Promise<string>((resolve, reject) => {
+    let settled = false
+    const settle = (fn: () => void): void => {
+      if (!settled) {
+        settled = true
+        fn()
+      }
+    }
+
+    let buffer = ''
+    child!.stdout?.on('data', (chunk: Buffer) => {
+      log.write(chunk)
+      buffer += chunk.toString('utf8')
+      const match = buffer.match(/^dsh web: (https?:\/\/\S+)$/m)
+      if (match) settle(() => resolve(match[1]))
     })
+    child!.once('exit', (code, signal) => {
+      settle(() =>
+        reject(new Error(`dsh web 进程提前退出（code=${code} signal=${signal}），日志见 ${logDir}/web-server.log`)),
+      )
+    })
+    // Fallback for kernels that do not print the URL: probe the base URL.
+    // The token-gated server answers 401 immediately, so give stdout a
+    // grace period to deliver the token URL before settling for the base.
+    waitForReady(baseUrl).then(
+      () => setTimeout(() => settle(() => resolve(baseUrl)), 5_000),
+      (error) => settle(() => reject(error)),
+    )
   })
-  await Promise.race([waitForReady(url), exited])
   return url
 }
 
@@ -131,8 +157,10 @@ async function waitForReady(url: string, timeoutMs = 120_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2000) })
-      if (response.ok) return
+      // Any HTTP response — including 401 from the token-gated UI — means
+      // the server is up.
+      await fetch(url, { signal: AbortSignal.timeout(2000) })
+      return
     } catch {
       // not up yet
     }

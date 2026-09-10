@@ -40,5 +40,6 @@ npm view @deepseek-ai/dsh time        # 各版本发布时间，判断新旧
 - electron-builder 固定 25.1.8：26.x 的 `app-builder-lib` 声明依赖 `@electron/get@^3` 却使用了 v4+ 才加入的 `ElectronDownloadCacheMode`，打包即崩（上游版本声明 bug）。
 - `scripts/prepare-node.mjs` 把构建机的 Node 可执行文件复制到 `build/node/bin/node`，经 `extraResources` 打进 `Resources/node/`，子进程优先使用它（找不到才回退系统 Node / Electron run-as-node）。
 - `@deepseek-ai/*` 固定版本并指向官方 registry（`.npmrc`）：npmmirror 的 latest 标签滞后。
+- 内核 ≥0.1.5 起 `dsh web` 带 token 鉴权：CLI 在 stdout 打印完整 URL（`dsh web: http://…/?token=…`），裸请求一律 401。壳必须从 stdout 解析该 URL 加载（token 换 session cookie），不能只对裸端口探活（见 `src/main/server.ts`）。
 - npm 11 默认拦截依赖安装脚本：已在本包 `allowScripts` 中放行 electron/esbuild/koffi/node-pty/dsh-subprocess-local。若 `node_modules/electron/dist` 不完整（本机出现过 install.js 缓存命中后不解压的静默失败），手动执行：
   `cd node_modules/electron && unzip -oq ~/Library/Caches/electron/*/electron-v<version>-darwin-arm64.zip -d dist && echo -n "v<version>" > dist/version && echo -n "Electron.app/Contents/MacOS/Electron" > path.txt`
