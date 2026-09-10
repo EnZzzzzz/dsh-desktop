@@ -110,7 +110,9 @@ export async function startWebServer(): Promise<string> {
   log.write(`\n===== dsh web starting at ${new Date().toISOString()} on port ${port} =====\n`)
 
   const { command, envPrefix } = resolveNodeCommand()
-  child = spawn(command, [bin, 'web', '--port', String(port)], {
+  // `--no-open` keeps the kernel from also handing the UI off to the system
+  // browser: this window *is* the UI. Supported since kernel 0.1.5.
+  child = spawn(command, [bin, 'web', '--port', String(port), '--no-open'], {
     env: { ...process.env, ...envPrefix },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
