@@ -29,6 +29,7 @@ npm view @deepseek-ai/dsh time        # 各版本发布时间，判断新旧
 ## 开发准则
 
 - 本项目只做壳：界面与功能 100% 来自官方 `@deepseek-ai/dsh` 包，不 fork、不修改上游 UI；自定义行为只落在 `src/main` / `src/preload`。
+- 唯一例外是 `plugin/`（内置内核插件 `dsh-desktop-open-external`，通用设置里的「在浏览器中打开」按钮）：双面包结构（`lib/index.js` host 半 + 构建出的 `lib/client.js` client 半），改 `src/client.cjs` 后跑 `npm run build:plugin`（dev/package 已自动串）。壳启动时把它复制到 `$DSH_HOME/profiles/node_modules/` 并经 `--patch` 覆盖层装载（见 `src/main/desktop-plugin.ts`）——不动 profile 的 `dsh.profile.bundles`，避免用户自有列表跟不上内核模板升级。这些 slot/rpc API 是内核内部契约，升级内核需回归验证。
 - 应用版本号与内核 `@deepseek-ai/dsh` 版本保持同步，升级时 `@deepseek-ai/*` 整族一起升。
 - 改动打包配置（`electron-builder.yml`、`scripts/`、依赖结构）后必须跑 `npm run package` 验证 DMG 能产出且应用能启动。
 

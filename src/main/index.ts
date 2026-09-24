@@ -5,13 +5,14 @@ import { loadingPage, errorPage } from './pages'
 import { startWebServer, stopWebServer } from './server'
 import { startBrowserEndpoint } from './browser'
 import { installAppMenu } from './menu'
+import { ensureDesktopPlugin } from './desktop-plugin'
 
 let mainWindow: BrowserWindow | null = null
 let closeBrowserEndpoint: (() => void) | null = null
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-function createWindow(): void {
+function createWindow(pluginPatch: string | null): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -45,7 +46,7 @@ function createWindow(): void {
     mainWindow = null
   })
 
-  startWebServer()
+  startWebServer(pluginPatch)
     .then((url) => mainWindow?.loadURL(url))
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error)
@@ -74,7 +75,9 @@ if (!gotLock) {
     } catch (error) {
       console.error('[builtin-browser] control endpoint failed:', error)
     }
-    createWindow()
+    // Install the built-in kernel plugin before spawning `dsh web` so the
+    // child boots with the --patch overlay that mounts it.
+    createWindow(ensureDesktopPlugin())
   })
 
   // The web server is a child of this app: closing the window ends the session.

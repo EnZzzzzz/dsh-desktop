@@ -37,6 +37,13 @@ extraResources:
       - '!**/node_gyp_bins/**'
   - from: build/node
     to: node
+  # Built-in kernel plugin (see src/main/desktop-plugin.ts): copied into
+  # $DSH_HOME/profiles/node_modules at launch and mounted via --patch.
+  - from: plugin
+    to: plugin
+    filter:
+      - 'lib/**'
+      - 'package.json'
   # Loading-page logo (see logoDataUrl in src/main/index.ts).
   - from: build/icon.png
     to: icon.png

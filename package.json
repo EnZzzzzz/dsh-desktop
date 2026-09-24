@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop",
-  "version": "0.1.5-rc.1",
+  "version": "0.1.5-rc.2",
   "private": true,
   "description": "Desktop shell for the official DeepSeek Harness Web UI: spawns `dsh web` locally and renders it in Electron",
   "type": "module",
@@ -9,15 +9,16 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "npm run build:plugin && electron-vite dev",
+    "build": "npm run build:plugin && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "package": "node scripts/prepare-node.mjs && node scripts/prepare-runtime.mjs && electron-vite build && electron-builder",
-    "package:dir": "node scripts/prepare-node.mjs && node scripts/prepare-runtime.mjs && electron-vite build && electron-builder --dir"
+    "build:plugin": "node plugin/build.mjs",
+    "package": "node scripts/prepare-node.mjs && node scripts/prepare-runtime.mjs && npm run build:plugin && electron-vite build && electron-builder",
+    "package:dir": "node scripts/prepare-node.mjs && node scripts/prepare-runtime.mjs && npm run build:plugin && electron-vite build && electron-builder --dir"
   },
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.5-rc.1"
+    "@deepseek-ai/dsh": "0.1.5-rc.2"
   },
   "overrides": {
     "node-gyp": "^10.0.0"
@@ -30,11 +31,11 @@
     "typescript": "^5.9.0"
   },
   "allowScripts": {
-    "@deepseek-ai/dsh-subprocess-local@0.1.5-rc.1": true,
+    "@deepseek-ai/dsh-subprocess-local@0.1.5-rc.2": true,
     "electron@38.8.6": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
-    "koffi@3.2.1": true,
+    "koffi@3.3.1": true,
     "node-pty@1.2.0-beta.15": true,
     "@google/genai": false,
     "protobufjs": false

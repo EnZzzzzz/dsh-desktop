@@ -98,7 +98,7 @@ let child: ChildProcess | null = null
  * answers HTTP 200.
  * Resolves with the origin to load. Server logs go to userData/logs.
  */
-export async function startWebServer(): Promise<string> {
+export async function startWebServer(patchPath?: string | null): Promise<string> {
   const port = WEB_PORT
   await releasePort(port)
   const bin = resolveDshBin()
@@ -110,9 +110,15 @@ export async function startWebServer(): Promise<string> {
   log.write(`\n===== dsh web starting at ${new Date().toISOString()} on port ${port} =====\n`)
 
   const { command, envPrefix } = resolveNodeCommand()
+  // Launcher flags must precede the app flags: parsing stops at the first
+  // unrecognized token and everything after it goes to the web app verbatim.
+  // `--patch` mounts the shell's built-in plugin (see desktop-plugin.ts).
+  const args = [bin, 'web']
+  if (patchPath) args.push('--patch', patchPath)
   // `--no-open` keeps the kernel from also handing the UI off to the system
   // browser: this window *is* the UI. Supported since kernel 0.1.5.
-  child = spawn(command, [bin, 'web', '--port', String(port), '--no-open'], {
+  args.push('--port', String(port), '--no-open')
+  child = spawn(command, args, {
     env: { ...process.env, ...envPrefix },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -138,6 +144,12 @@ export async function startWebServer(): Promise<string> {
       buffer += chunk.toString('utf8')
       const match = buffer.match(/^dsh web: (https?:\/\/\S+)$/m)
       if (match) settle(() => resolve(match[1]))
+    })
+    // Spawn failure (e.g. the resolved node binary cannot exec) emits
+    // 'error' without 'exit'; without a listener it would surface as an
+    // uncaught exception in the main process instead of the error page.
+    child!.once('error', (error) => {
+      settle(() => reject(new Error(`dsh web 进程启动失败：${error.message}，日志见 ${logDir}/web-server.log`)))
     })
     child!.once('exit', (code, signal) => {
       settle(() =>
