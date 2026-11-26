@@ -53,9 +53,16 @@ const summary = (id, over = {}) => {
   return row
 }
 const makeList = (rows) => ({ ids: rows.map(r => r.id), byId: Object.fromEntries(rows.map(r => [r.id, r])) })
+const workspace = (id, title, path, sessionIds) => ({
+  workspaceId: id, title, path, sessionIds, createdAt: '', updatedAt: '',
+})
 
 const mainRow = summary('s1', { age: 60_000, retainedBy: { mainView: 1 } })
 const normal = {
+  workspaces: [
+    workspace('w-desk', 'dsh-desktop', '/Volumes/DataDrive/proj/my/dsh-desktop', ['s1', 's2']),
+    workspace('w-other', 'other-project', '/tmp/other', ['s3']),
+  ],
   list: makeList([
     mainRow,
     summary('s2', { age: 3_600_000, displayTitle: '' }),
@@ -101,12 +108,19 @@ function mount(plugin, state) {
 }
 
 /** Render the way the kernel does: a throw abandons the whole slot entry. */
+/** The root standard-hook kit the kernel hands every root slot. */
+const standardProps = (state, wide) => ({
+  wide,
+  useSessions: selector => selector(state.list),
+  useSessionStatus: selector => selector(state.statuses),
+  useWorkspaces: selector => selector({
+    items: state.workspaces ?? [], archivedSessionIds: [], pinnedSessionIds: [],
+    state: 'idle', phase: 'ready', error: null,
+  }),
+})
+
 function renderEntry(component, state, wide) {
-  const props = {
-    wide,
-    useSessions: selector => selector(state.list),
-    useSessionStatus: selector => selector(state.statuses),
-  }
+  const props = standardProps(state, wide)
   try {
     return { tree: mountRoot(React.createElement(component, props)), crashed: false }
   } catch (error) {
@@ -118,11 +132,7 @@ function renderEntry(component, state, wide) {
 function commit(component, state, wide) {
   try {
     flushPending()
-    return { tree: mountRoot(React.createElement(component, {
-      wide,
-      useSessions: selector => selector(state.list),
-      useSessionStatus: selector => selector(state.statuses),
-    })), crashed: false }
+    return { tree: mountRoot(React.createElement(component, standardProps(state, wide))), crashed: false }
   } catch (error) {
     return { tree: null, crashed: true, error }
   }
@@ -189,7 +199,7 @@ const openCases = [
 for (const [name, data, statusesOf] of openCases) {
   instances.clear()
   rerenderQueue.length = 0
-  const state = { list: data?.list, statuses: statusesOf() }
+  const state = { list: data?.list, statuses: statusesOf(), workspaces: data?.workspaces }
   const mounted = mount(plugin, state)
   const component = mounted.component
   const closed = renderEntry(component, state, false)
@@ -219,7 +229,31 @@ for (const [name, data, statusesOf] of openCases) {
       rowNames[0]?.includes('会话 s1') && rowNames[1]?.includes('未命名')
       && rowNames[2]?.includes('会话 s3') && rowNames[3]?.includes('会话 s4'), JSON.stringify(rowNames))
     check('open: unnamed session labelled 未命名', rowNames.some(n => n.includes('未命名')), JSON.stringify(rowNames))
-    check('open: day grouping shown', names.some(n => n.includes('今天')), JSON.stringify(names))
+    const groupKeys = []
+    const collectGroups = (nodes) => (nodes ?? []).forEach((n) => {
+      if (n.tag === 'button' && n.props?.className === 'dshd-rail-menu-group') groupKeys.push(n.props['data-group'])
+      collectGroups(n.children)
+    })
+    collectGroups(opened.tree)
+    check('open: grouped by Workspace, Ungrouped last',
+      groupKeys.length === 3 && groupKeys[0] === 'w-desk' && groupKeys[1] === 'w-other' && groupKeys[2] === '',
+      JSON.stringify(groupKeys))
+    const groupText = names.join(' ').replace(/\s+/g, ' ')
+    const groupNames = [
+      groupText.includes('dsh-desktop 2') ? 'dsh-desktop' : null,
+      groupText.includes('other-project 1') ? 'other-project' : null,
+    ].filter(Boolean)
+    check('open: group headings name their Workspace',
+      groupNames.some(n => n.startsWith('dsh-desktop')) && groupNames.some(n => n.startsWith('other-project')),
+      JSON.stringify(names))
+    check('open: ungrouped heading', names.some(n => n.includes('未分组')), JSON.stringify(names))
+    // Collapsing a group hides only its rows.
+    const firstGroup = find(opened.tree, n => n.tag === 'button' && n.props?.className === 'dshd-rail-menu-group')
+    firstGroup.props.onClick()
+    const folded = commit(component, state, false)
+    check('open: collapsing a group hides its rows only', !folded.crashed
+      && labels(folded.tree).filter(n => n.startsWith('会话 s')).length === 2
+      && labels(folded.tree).some(n => n.includes('other-project')), folded.crashed ? folded.error?.stack : '')
     check('open: current session marked', rows.find(r => r.props['data-session-id'] === 's1')?.props['data-current'] === 'true')
     check('open: status dots rendered', find(opened.tree, n => n.component === 'host' && n.props?.['data-kind']) !== null)
     rows.find(r => r.props['data-session-id'] === 's3').props.onClick()

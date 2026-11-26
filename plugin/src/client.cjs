@@ -19,6 +19,10 @@ const { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalSt
 
 /** Stable empty id list shared by renders that have no snapshot yet. */
 const EMPTY_IDS = []
+/** Stable empty Workspace list for the same reason. */
+const EMPTY_ITEMS = []
+/** Owner key for Sessions no Workspace accounts for. */
+const UNGROUPED = ''
 
 /** Share of the rail's Session goal this floating list keeps to. */
 const RECENT_LIMIT = 30
@@ -50,6 +54,7 @@ const COPY = {
     yesterday: '昨天',
     week: '最近 7 天',
     earlier: '更早',
+    ungrouped: '未分组',
   },
   en: {
     trigger: 'Sessions',
@@ -66,6 +71,7 @@ const COPY = {
     yesterday: 'Yesterday',
     week: 'Previous 7 days',
     earlier: 'Earlier',
+    ungrouped: 'Ungrouped',
   },
 }
 
@@ -138,11 +144,40 @@ const css = `
   scrollbar-width: thin;
 }
 .dshd-rail-menu-group {
-  padding: 8px 6px 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 6px 0 2px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
+  font: inherit;
   font-size: 11px;
   line-height: 16px;
-  opacity: 0.85;
+  text-align: start;
+  cursor: pointer;
+}
+.dshd-rail-menu-group:hover { background: var(--dsw-alias-bg-l2-hover, rgba(127, 127, 127, 0.10)); }
+.dshd-rail-menu-group:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+.dshd-rail-menu-group-caret { flex: none; width: 8px; font-size: 9px; opacity: 0.8; }
+.dshd-rail-menu-group-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.dshd-rail-menu-group-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
 }
 .dshd-rail-menu-row {
   display: flex;
@@ -179,15 +214,6 @@ const css = `
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
-}
-.dshd-rail-menu-meta {
-  flex: none;
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
 }
 .dshd-rail-menu-empty {
   padding: 18px 8px;
@@ -369,7 +395,6 @@ function placeMenu(trigger, menu) {
 
 function SessionRow({ summary, current, status, copy, now, onSelect }) {
   const kind = statusKind(status)
-  const cwd = workspaceLabel(rowCwd(summary))
   return h(
     'button',
     {
@@ -384,7 +409,6 @@ function SessionRow({ summary, current, status, copy, now, onSelect }) {
       onClick: onSelect,
     },
     h('span', { className: 'dshd-rail-menu-title' }, rowTitle(summary, copy)),
-    cwd === '' ? null : h('span', { className: 'dshd-rail-menu-meta' }, cwd),
     kind === ''
       ? null
       : h('span', {
@@ -402,12 +426,16 @@ function RailSessionMenu({
   items,
   total,
   currentId,
+  workspaces,
+  ownerOf,
   statusOf,
   onSelect,
   onHover,
 }) {
   const [query, setQuery] = useState('')
   const [now, setNow] = useState(() => Date.now())
+  // Collapsed Workspace groups; a filtered list always shows its matches.
+  const [collapsed, setCollapsed] = useState({})
   const searchRef = useRef(null)
 
   useEffect(() => {
@@ -420,33 +448,92 @@ function RailSessionMenu({
 
   const terms = splitQuery(query)
   const all = Array.isArray(items) ? items : EMPTY_IDS
+  const workspaceById = useMemo(() => {
+    const map = new Map()
+    for (const workspace of workspaces ?? []) map.set(workspace.workspaceId, workspace)
+    return map
+  }, [workspaces])
   const visible = useMemo(() => {
     if (terms.length === 0) return all.slice(0, RECENT_LIMIT)
     return all.filter((summary) => {
-      const haystack = `${rowTitle(summary, copy)}\n${rowCwd(summary)}`.toLowerCase()
+      const workspace = workspaceById.get(ownerOf?.get(summary.id))
+      const haystack = `${rowTitle(summary, copy)}\n${rowCwd(summary)}\n${workspace?.title ?? ''}`.toLowerCase()
       return terms.every(term => haystack.includes(term))
     }).slice(0, RECENT_LIMIT)
-  }, [all, terms.join(' '), copy])
+  }, [all, terms.join(' '), copy, ownerOf, workspaceById])
 
-  let lastBucket = ''
-  const rows = []
-  for (const summary of visible) {
-    const bucket = terms.length === 0 ? dayBucket(summary.updatedAt, now) : ''
-    if (bucket !== '' && bucket !== lastBucket) {
-      lastBucket = bucket
-      rows.push(h('div', { className: 'dshd-rail-menu-group', key: `group-${bucket}` }, copy[bucket]))
+  // Group the visible Sessions by owning Workspace, in Workspace order with
+  // Ungrouped last; within a group the newest Session leads.
+  const groups = useMemo(() => {
+    const byOwner = new Map()
+    for (const summary of visible) {
+      const owner = ownerOf?.get(summary.id) ?? UNGROUPED
+      if (!byOwner.has(owner)) byOwner.set(owner, [])
+      byOwner.get(owner).push(summary)
     }
+    const ordered = []
+    for (const workspace of workspaces ?? []) {
+      const members = byOwner.get(workspace.workspaceId)
+      if (members === undefined) continue
+      byOwner.delete(workspace.workspaceId)
+      ordered.push({
+        key: String(workspace.workspaceId),
+        label: workspace.title || workspaceLabel(workspace.path) || String(workspace.workspaceId),
+        cwd: typeof workspace.path === 'string' ? workspace.path : '',
+        sessions: members,
+      })
+    }
+    for (const [owner, members] of byOwner) {
+      ordered.push({
+        key: String(owner),
+        label: copy.ungrouped,
+        cwd: '',
+        sessions: members,
+      })
+    }
+    return ordered
+  }, [visible, ownerOf, workspaces, copy])
+
+  const filtered = terms.length > 0
+  const rows = []
+  for (const group of groups) {
+    const isCollapsed = filtered ? false : collapsed[group.key] === true
+    const marks = group.sessions.map(summary => statusKind(statusOf(summary.id)))
     rows.push(
-      h(SessionRow, {
-        key: summary.id,
-        summary,
-        current: summary.id === currentId,
-        status: statusOf(summary.id),
-        copy,
-        now,
-        onSelect: () => onSelect(summary.id),
-      }),
+      h(
+        'button',
+        {
+          type: 'button',
+          key: `group-${group.key}`,
+          className: 'dshd-rail-menu-group',
+          'data-group': group.key,
+          'aria-expanded': isCollapsed ? 'false' : 'true',
+          title: group.cwd || undefined,
+          onClick: () => setCollapsed(prev => ({ ...prev, [group.key]: !isCollapsed })),
+        },
+        h('span', { className: 'dshd-rail-menu-group-caret', 'aria-hidden': 'true' }, isCollapsed ? '▸' : '▾'),
+        h('span', { className: 'dshd-rail-menu-group-label' }, group.label),
+        marks.includes('pending') ? h('span', { className: 'dshd-rail-menu-dot', 'data-kind': 'pending' }) : null,
+        marks.includes('running') ? h('span', { className: 'dshd-rail-menu-dot', 'data-kind': 'running' }) : null,
+        marks.includes('unread') ? h('span', { className: 'dshd-rail-menu-dot', 'data-kind': 'unread' }) : null,
+        h('span', { className: 'dshd-rail-menu-group-count' }, String(group.sessions.length)),
+      ),
     )
+    if (isCollapsed) continue
+    for (const summary of group.sessions) {
+      rows.push(
+        h(SessionRow, {
+          key: summary.id,
+          summary,
+          current: summary.id === currentId,
+          status: statusOf(summary.id),
+          copy,
+          now,
+          group: group.key,
+          onSelect: () => onSelect(summary.id),
+        }),
+      )
+    }
   }
 
   return h(
@@ -460,6 +547,7 @@ function RailSessionMenu({
       onKeyDown: (event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           const buttons = [...event.currentTarget.querySelectorAll('.dshd-rail-menu-row')]
+
           if (buttons.length === 0) return
           const active = buttons.indexOf(event.target)
           const step = event.key === 'ArrowDown' ? 1 : -1
@@ -638,6 +726,10 @@ function SidebarRailSessions(props, injected) {
   const { openSession, copy } = injected
   const useSessions = props.useSessions
   const useSessionStatus = props.useSessionStatus
+  const useWorkspaces = props.useWorkspaces
+  const workspaceSnapshot = typeof useWorkspaces === 'function'
+    ? useWorkspaces(state => state)
+    : undefined
   // The list snapshot is absent until the service publishes its first value;
   // every read below tolerates that, so hovering can never crash the entry
   // (a throwing render makes the kernel drop the whole slot, button included).
@@ -653,10 +745,26 @@ function SidebarRailSessions(props, injected) {
 
   const ids = Array.isArray(list?.ids) ? list.ids : EMPTY_IDS
   const byId = list?.byId ?? {}
+  // Workspace membership is authoritative on the Workspace list; a Session no
+  // Workspace accounts for falls into the Ungrouped bucket, as in the full
+  // browser.
+  const workspaceItems = Array.isArray(workspaceSnapshot?.items) ? workspaceSnapshot.items : EMPTY_ITEMS
   const items = useMemo(() => ids
     .map(id => byId[id])
     .filter(summary => summary !== undefined && summary.origin !== 'subagent')
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), [ids, byId])
+
+  // Session id -> owning Workspace id. Built from the Workspace order so the
+  // first Workspace claiming a Session wins, matching the browser.
+  const ownerOf = useMemo(() => {
+    const owners = new Map()
+    for (const workspace of workspaceItems) {
+      for (const sessionId of workspace.sessionIds ?? []) {
+        if (!owners.has(sessionId)) owners.set(sessionId, workspace.workspaceId)
+      }
+    }
+    return owners
+  }, [workspaceItems])
 
   const currentId = useMemo(() => ids.find((id) => {
     const summary = byId[id]
@@ -802,6 +910,8 @@ function SidebarRailSessions(props, injected) {
             items,
             total: items.length,
             currentId,
+            workspaces: workspaceItems,
+            ownerOf,
             statusOf: (id) => statuses?.get(id),
             onSelect: select,
             onHover: cancelClose,
