@@ -24,19 +24,23 @@ export function ensureDesktopPlugin(): string | null {
     const sourceDir = app.isPackaged
       ? join(process.resourcesPath, 'plugin')
       : join(app.getAppPath(), 'plugin')
-    const sourceManifest = JSON.parse(
-      readFileSync(join(sourceDir, 'package.json'), 'utf8'),
-    ) as { version?: string }
+    // Refresh whenever the shipped manifest differs from the installed one.
+    // The client half is served from the installed package on every page
+    // load, so a version bump in plugin/package.json is what rolls it out;
+    // comparing the whole manifest also picks up entry-point changes.
+    const sourceManifest = readFileSync(join(sourceDir, 'package.json'), 'utf8')
+    const canonical = (text: string): string => JSON.stringify(JSON.parse(text) as unknown)
 
     const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
     const targetDir = join(dshHome, 'profiles', 'node_modules', PLUGIN_NAME)
     const targetManifestPath = join(targetDir, 'package.json')
     let current = false
     if (existsSync(targetManifestPath)) {
-      const target = JSON.parse(readFileSync(targetManifestPath, 'utf8')) as {
-        version?: string
+      try {
+        current = canonical(readFileSync(targetManifestPath, 'utf8')) === canonical(sourceManifest)
+      } catch {
+        current = false
       }
-      current = target.version === sourceManifest.version
     }
     if (!current) {
       rmSync(targetDir, { recursive: true, force: true })

@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop-open-external",
-  "description": "dsh-desktop built-in plugin: open the token-authenticated Web UI in the system browser from General settings",
-  "version": "0.1.2",
+  "description": "dsh-desktop built-in plugin: open the Web UI in the system browser from General settings, and a floating session switcher on the collapsed sidebar rail",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
