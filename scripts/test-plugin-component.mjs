@@ -96,7 +96,8 @@ function mount(plugin, state) {
   })
   // `state.opened` reads through to the last call, not a snapshot.
   Object.defineProperty(state, 'opened', { get: () => openedSession, configurable: true })
-  return { component: registered[0]?.component, registration: registered[0]?.options, styleTags }
+  const rail = registered.find(r => r.options.name === 'sidebar.footer.action')
+  return { component: rail?.component, registration: rail?.options, styleTags, registered }
 }
 
 /** Render the way the kernel does: a throw abandons the whole slot entry. */
@@ -141,9 +142,11 @@ console.log('plugin exports:', Object.keys(plugin), '| inject:', plugin.inject)
 // 1. Registration contract.
 {
   const state = { ...normal }
-  const { component, registration, styleTags } = mount(plugin, state)
+  const { component, registration, styleTags, registered } = mount(plugin, state)
   check('exports apply/inject', typeof plugin.apply === 'function' && Array.isArray(plugin.inject))
   check('registers into sidebar.footer.action', registration?.name === 'sidebar.footer.action')
+  // The plugin carries two features; a rewrite of one must not drop the other.
+  check('also registers the General-settings row', registered.some(r => r.options.name === 'settings.general.item'))
   check('id and order', registration?.id === 'dsh-desktop-rail-sessions' && registration?.order === 100)
   check('style tag installed', styleTags.length === 1)
   const css = styleTags[0]?.textContent ?? ''
